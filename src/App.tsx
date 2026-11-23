@@ -18,8 +18,10 @@ import {
   ArrowDownloadRegular,
   ArrowResetRegular,
   BookOpenRegular,
+  CheckmarkRegular,
   ClipboardPasteRegular,
   CodeRegular,
+  CopyRegular,
   DeleteRegular,
   FolderOpenRegular,
   GridRegular,
@@ -552,6 +554,25 @@ export const App: React.FC = () => {
     );
   }, [filteredTracks, effectiveTracks, selectedUid]);
 
+  const [copiedClip, setCopiedClip] = useState<boolean>(false);
+
+  useEffect(() => {
+    setCopiedClip(false);
+  }, [selectedTrack?.uid]);
+
+  const handleCopyClipQuery = useCallback(() => {
+    if (!selectedTrack) return;
+    const query = {
+      channel_id: selectedTrack.channelId,
+      start_time: selectedTrack.startTime,
+      end_time: selectedTrack.endTime,
+      track_id: selectedTrack.trackId,
+    };
+    navigator.clipboard?.writeText(JSON.stringify(query, null, 2));
+    setCopiedClip(true);
+    window.setTimeout(() => setCopiedClip(false), 1800);
+  }, [selectedTrack]);
+
   // Keyboard Up/Down navigation in track table
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1018,6 +1039,20 @@ export const App: React.FC = () => {
                             : ''}
                           )
                         </span>
+                        <Tooltip
+                          content="Copy { channel_id, start_time, end_time, track_id } for on-demand edge video retrieval"
+                          relationship="label"
+                        >
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={copiedClip ? <CheckmarkRegular /> : <CopyRegular />}
+                            onClick={handleCopyClipQuery}
+                            style={{ marginLeft: 'auto' }}
+                          >
+                            {copiedClip ? 'Copied Clip Query' : 'Copy Clip Query JSON'}
+                          </Button>
+                        </Tooltip>
                       </div>
                     </div>
 

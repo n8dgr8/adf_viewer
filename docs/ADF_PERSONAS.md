@@ -67,7 +67,7 @@ This guide organizes how to frame, position, and demonstrate Axis Analytics Data
 * **How to demo with `adf-viewer`:**
   1. Toggle **`Strip Snapshots (Metadata-Only)`** ON in the view bar. Watch all snapshot JPEGs disappear across the app while the total session byte counter drops dramatically.
   2. Open **Scene & Zone Sandbox** and **Session & Attribute Explorer** (`Show Timeline Swimlanes` + `Show Session Summary`) to prove that **2D density heatmaps**, **tripwire directional counts**, **8-way compass roses**, **concurrent occupancy**, and **dwell duration** continue working 100% from normalized `[0..1]` bounding-box coordinates alone—zero faces, zero plates, zero video frames.
-  3. Point to the **Edge Recording Retrieval Window** (`channel_id`, `start_time`, `end_time`) in **Inspector Workbench** (`TrackTelemetryCard`) or **Session & Attribute Explorer** to explain the on-demand PII pattern below.
+  3. Point to the **Edge Recording Retrieval Window** (`channel_id`, `start_time`, `end_time`) via **Copy Clip Query JSON** in the **Inspector Workbench** **Track Summary Banner** or **Session & Attribute Explorer** to explain the on-demand PII pattern below.
 
 ---
 
@@ -78,7 +78,7 @@ This guide organizes how to frame, position, and demonstrate Axis Analytics Data
 * **Why ADF fits:** Replaces passive CCTV review with quantifiable proximity, dwell duration, and zone-entry telemetry.
 * **How to demo with `adf-viewer`:**
   * In **Session & Attribute Explorer**, click **Show Timeline Swimlanes** to inspect the Gantt swimlanes and `Concurrent Scene` mini-map as multiple objects occupy the scene simultaneously.
-  * In **Inspector Workbench**, check **Class & Color Candidates** (`TrackTelemetryCard`) to review object classification confidence and copy the **Edge Recording Clip Window** query.
+  * In **Inspector Workbench**, copy the **Edge Recording Clip Window** query from the **Track Summary Banner**, and check **Class & Color Candidates** (`TrackTelemetryCard`) to review object classification confidence.
   * In **Scene & Zone Sandbox**, draw an **ROI Box** over a loading bay or pedestrian crosswalk to isolate every track that entered it.
 
 ### 6. Edge / Cloud FinOps & Remote-Site IoT Architects
