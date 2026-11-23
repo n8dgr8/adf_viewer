@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@axiscommunications/fluent-theme": ["./src/axis-fluent/fluent-theme.ts"],
+      "@axiscommunications/fluent-topbar": ["./src/axis-fluent/fluent-topbar.tsx"],
+      "@axiscommunications/fluent-empty-view": ["./src/axis-fluent/fluent-empty-view.tsx"],
+      "@axiscommunications/fluent-styles": ["./src/axis-fluent/fluent-styles.ts"]
+    }
+  },
+  "include": ["src"]
+}
