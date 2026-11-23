@@ -1,5 +1,4 @@
 import { AdfBoundingBox, AdfColorCandidate, AdfImageSnapshot, NormalizedTrackRecord } from '../../types/adf';
-import { getBoxCenter, getBoxFootPoint } from '../../utils/adfParser';
 
 export type ColorScope = 'object' | 'upper' | 'lower';
 
@@ -94,71 +93,6 @@ export function extractTrackColorEntries(track: NormalizedTrackRecord): TrackCol
   }
 
   return Array.from(deduped.values()).sort((a, b) => b.score - a.score);
-}
-
-export interface ObservationMetricPoint {
-  index: number;
-  timestamp: string;
-  relSec: number;
-  dtSec: number;
-  stepDist: number;
-  speedUnitsPerSec: number;
-  boxAreaPct: number;
-  aspectRatio: number;
-  center: { x: number; y: number };
-  foot: { x: number; y: number };
-  box: AdfBoundingBox;
-}
-
-export function computeObservationMetrics(track: NormalizedTrackRecord): ObservationMetricPoint[] {
-  const obs = track.observations;
-  if (obs.length === 0) return [];
-
-  const t0Ms = Date.parse(obs[0].timestamp);
-  return obs.map((o, idx) => {
-    const tMs = Date.parse(o.timestamp);
-    const relSec =
-      !Number.isNaN(t0Ms) && !Number.isNaN(tMs) ? Math.max(0, (tMs - t0Ms) / 1000) : idx * 0.1;
-
-    const w = Math.max(0.0001, o.bounding_box.right - o.bounding_box.left);
-    const h = Math.max(0.0001, o.bounding_box.bottom - o.bounding_box.top);
-    const boxAreaPct = w * h * 100;
-    const aspectRatio = h / w;
-    const center = getBoxCenter(o.bounding_box);
-    const foot = getBoxFootPoint(o.bounding_box);
-
-    let dtSec = 0;
-    let stepDist = 0;
-    let speedUnitsPerSec = o.speed ?? 0;
-
-    if (idx > 0) {
-      const prev = obs[idx - 1];
-      const prevFoot = getBoxFootPoint(prev.bounding_box);
-      const prevMs = Date.parse(prev.timestamp);
-      dtSec =
-        !Number.isNaN(prevMs) && !Number.isNaN(tMs) && tMs > prevMs
-          ? (tMs - prevMs) / 1000
-          : Math.max(0.05, track.durationSec / Math.max(1, obs.length - 1));
-      stepDist = Math.hypot(foot.x - prevFoot.x, foot.y - prevFoot.y);
-      if (o.speed === undefined) {
-        speedUnitsPerSec = dtSec > 0 ? stepDist / dtSec : 0;
-      }
-    }
-
-    return {
-      index: idx,
-      timestamp: o.timestamp,
-      relSec,
-      dtSec,
-      stepDist,
-      speedUnitsPerSec,
-      boxAreaPct,
-      aspectRatio,
-      center,
-      foot,
-      box: o.bounding_box,
-    };
-  });
 }
 
 export function headingToCompassLabel(deg: number): string {

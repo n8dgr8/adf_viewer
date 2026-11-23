@@ -434,13 +434,6 @@ export const SpatialAnalyticsView: React.FC<SpatialAnalyticsViewProps> = ({
       matching.length > 0
         ? matching.reduce((acc, t) => acc + t.durationSec, 0) / matching.length
         : 0;
-    const avgSpeed =
-      matching.length > 0
-        ? matching.reduce(
-            (acc, t) => acc + (t.durationSec > 0 ? t.pathLengthNormalized / t.durationSec : 0),
-            0
-          ) / matching.length
-        : 0;
 
     return {
       matching,
@@ -449,7 +442,6 @@ export const SpatialAnalyticsView: React.FC<SpatialAnalyticsViewProps> = ({
       aToB,
       bToA,
       avgDwell,
-      avgSpeed,
     };
   }, [tracks, roiBox, tripwire, anchorMode]);
 
@@ -1025,10 +1017,10 @@ export const SpatialAnalyticsView: React.FC<SpatialAnalyticsViewProps> = ({
               </div>
               <div className={styles.kpiMiniCard}>
                 <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-                  Avg Dwell / Speed
+                  Avg Dwell Duration
                 </Text>
-                <Text size={300} weight="semibold" className={styles.mono}>
-                  {spatialEval.avgDwell.toFixed(1)}s · {spatialEval.avgSpeed.toFixed(2)} u/s
+                <Text size={500} weight="semibold" className={styles.mono}>
+                  {spatialEval.avgDwell.toFixed(1)}s
                 </Text>
               </div>
             </div>

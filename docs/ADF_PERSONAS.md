@@ -12,10 +12,10 @@ This guide organizes how to frame, position, and demonstrate Axis Analytics Data
 | **2** | **Security Developers ("NVR-Lite")** | 24/7 continuous video recording across sites saturates WAN links and burns terabytes of disk space on mostly empty scenes. | **Forensic awareness at <1% of video bandwidth.** Store compact JSON tracks + one best-shot JPEG (`image.data`) per object instead of continuous 1080p H.264 streams. | `image.data`, `image.crop_box`, `image.timestamp`, `classes[].colors`, `upper_clothing_colors`, `lower_clothing_colors` | **Session & Attribute Explorer**, **Inspector Workbench** (`BandwidthComparisonCard` & `SnapshotCard`) |
 | **3** | **Non-Developers & Business Stakeholders** | Assume cameras only output raw video that humans must watch, or think scene AI requires expensive external servers. | **Look what the camera knows on the edge.** Out of the box, the camera classifies humans/vehicles/bikes, scores clothing/vehicle colors, tracks trajectories, and picks a best snapshot. | `classes[]`, `colors`, `upper_clothing_colors`, `lower_clothing_colors`, `path[]`, `image` | **Session & Attribute Explorer**, **Scene & Zone Sandbox** |
 | **4** | **GDPR / Privacy-Conscious Developers** | Saving continuous video, faces, or plates triggers heavy retention, consent, DPIA, and right-to-erasure compliance risk. | **Anonymous spatial telemetry by design.** Enable **`Strip Snapshots (Metadata-Only)`** and ADF is pure normalized boxes (`[0..1]`), timestamps, and coarse classes—zero faces, plates, or biometric PII. | `path[].bounding_box`, `start_time`, `end_time`, `channel_id`, `classes[].type` *(with `image.data` stripped)* | Global **`Strip Snapshots`** toggle + **Scene & Zone Sandbox** + **Session & Attribute Explorer** (`Show Timeline Swimlanes`) |
-| **5** | **Industrial EHS (Health & Safety) Engineers** | Need to detect vehicle–pedestrian near-misses, restricted-zone entries, and excessive speeds in warehouses or yards. | **Multi-object spatial + kinematic correlation.** Combine concurrent timeline overlap, instantaneous velocity curves, and ROI zones to flag unsafe co-presence. | `path[].timestamp`, `path[].bounding_box`, `classes[].type`, `start_time`, `end_time` | **Session & Attribute Explorer** (`Show Timeline Swimlanes`), **Inspector Workbench** (`TrackTelemetryCard`), **Scene & Zone Sandbox** |
+| **5** | **Industrial EHS (Health & Safety) Engineers** | Need to detect vehicle–pedestrian near-misses, restricted-zone entries, and loitering in warehouses or yards. | **Multi-object spatial + temporal correlation.** Combine concurrent timeline overlap, dwell duration, and ROI zones to flag unsafe co-presence. | `path[].timestamp`, `path[].bounding_box`, `classes[].type`, `start_time`, `end_time` | **Session & Attribute Explorer** (`Show Timeline Swimlanes`), **Inspector Workbench** (`TrackTelemetryCard`), **Scene & Zone Sandbox** |
 | **6** | **Edge / Cloud FinOps & Remote IoT Architects** | Solar, LTE, or Starlink sites (construction, utilities, rail crossings) cannot stream continuous video over metered links. | **Extreme MQTT payload economics.** Metadata-only tracks are typically ~1–3 KB each (or ~10–20 KB with a snapshot)—ideal for low-bandwidth cellular telemetry. | Total JSON packet size (`metadataBytes` vs `snapshotBase64Bytes`) | Global **`Strip Snapshots`** toggle + **Inspector Workbench** (`BandwidthComparisonCard`) + **Session & Attribute Explorer** (`Show Session Summary`) |
 | **7** | **Retail, Smart Building & Space Planners** | Need store/corridor foot-traffic heatmaps, directional splits, and end-cap dwell trends without manual counting. | **Turn cameras into spatial occupancy sensors.** Aggregate normalized footpoints into density heatmaps and directional compass roses across arbitrary zones. | `path[].bounding_box` (footpoint), `start_time`, `end_time`, `duration` | **Scene & Zone Sandbox** |
-| **8** | **System Integrators & Field Sales Engineers** | Need to validate camera placement, perspective sizing, and model confidence during a site POC. | **Quantitative field-of-view diagnostics.** Inspect bounding-box area % growth, `H/W` aspect ratio shifts, and per-candidate confidence scores across the scene. | `path[].bounding_box`, `classes[].score`, `image.crop_box` | **Inspector Workbench** (`TrackTelemetryCard` & `TrackSceneCanvas`) |
+| **8** | **System Integrators & Field Sales Engineers** | Need to validate camera placement, bounding-box progression, and model confidence during a site POC. | **Quantitative field-of-view diagnostics.** Inspect bounding-box trajectory progression and per-candidate class/color confidence scores across the scene. | `path[].bounding_box`, `classes[].score`, `image.crop_box` | **Inspector Workbench** (`TrackTelemetryCard` & `TrackSceneCanvas`) |
 
 ---
 
@@ -66,7 +66,7 @@ This guide organizes how to frame, position, and demonstrate Axis Analytics Data
   * *"If a genuine security incident does occur, how do we investigate it without keeping PII for every normal visitor?"*
 * **How to demo with `adf-viewer`:**
   1. Toggle **`Strip Snapshots (Metadata-Only)`** ON in the view bar. Watch all snapshot JPEGs disappear across the app while the total session byte counter drops dramatically.
-  2. Open **Scene & Zone Sandbox** and **Session & Attribute Explorer** (`Show Timeline Swimlanes` + `Show Session Summary`) to prove that **2D density heatmaps**, **tripwire directional counts**, **8-way compass roses**, **concurrent occupancy**, and **speed profiles** continue working 100% from normalized `[0..1]` bounding-box coordinates alone—zero faces, zero plates, zero video frames.
+  2. Open **Scene & Zone Sandbox** and **Session & Attribute Explorer** (`Show Timeline Swimlanes` + `Show Session Summary`) to prove that **2D density heatmaps**, **tripwire directional counts**, **8-way compass roses**, **concurrent occupancy**, and **dwell duration** continue working 100% from normalized `[0..1]` bounding-box coordinates alone—zero faces, zero plates, zero video frames.
   3. Point to the **Edge Recording Retrieval Window** (`channel_id`, `start_time`, `end_time`) in **Inspector Workbench** (`TrackTelemetryCard`) or **Session & Attribute Explorer** to explain the on-demand PII pattern below.
 
 ---
@@ -75,10 +75,10 @@ This guide organizes how to frame, position, and demonstrate Axis Analytics Data
 
 ### 5. Industrial EHS (Environment, Health & Safety) Engineers
 * **Who they are:** Warehouse, manufacturing, logistics yard, and plant safety leads monitoring forklift/truck lanes, pedestrian walkways, and restricted hazard zones.
-* **Why ADF fits:** Replaces passive CCTV review with quantifiable proximity, speed, and zone-entry telemetry.
+* **Why ADF fits:** Replaces passive CCTV review with quantifiable proximity, dwell duration, and zone-entry telemetry.
 * **How to demo with `adf-viewer`:**
   * In **Session & Attribute Explorer**, click **Show Timeline Swimlanes** to inspect the Gantt swimlanes and `Concurrent Scene` mini-map as multiple objects occupy the scene simultaneously.
-  * In **Inspector Workbench**, check **Kinematics & Candidate Telemetry** (`TrackTelemetryCard`) to examine the **Instantaneous Speed** profile (`units/sec`).
+  * In **Inspector Workbench**, check **Class & Color Candidates** (`TrackTelemetryCard`) to review object classification confidence and copy the **Edge Recording Clip Window** query.
   * In **Scene & Zone Sandbox**, draw an **ROI Box** over a loading bay or pedestrian crosswalk to isolate every track that entered it.
 
 ### 6. Edge / Cloud FinOps & Remote-Site IoT Architects
@@ -99,8 +99,8 @@ This guide organizes how to frame, position, and demonstrate Axis Analytics Data
 * **Who they are:** Solutions architects, pre-sales engineers, and installers tuning camera angles, mounting heights, and analytics rules during POCs and commissioning.
 * **Why ADF fits:** Turns subjective "looks good on screen" tuning into measurable bounding-box and confidence telemetry.
 * **How to demo with `adf-viewer`:**
-  * Open **Inspector Workbench** and check **Kinematics & Candidate Telemetry** (`BBox Area % & Aspect (H/W)`) to verify how large an object appears across its trajectory from entry to exit.
-  * On **Scene Path Trajectory** (`TrackSceneCanvas`), enable **BBox Trail**, toggle **Anchor: Footpoint vs Center**, and upload a camera reference image via **Scene BG** to verify alignment against physical landmarks.
+  * Open **Inspector Workbench** and check **Class & Color Candidates** (`TrackTelemetryCard`) to review per-candidate class confidence scores and detected color attributes.
+  * On **Scene Trajectory & Path** (`TrackSceneCanvas`), enable **BBox Trail**, toggle **Anchor: Footpoint vs Center**, and upload a camera reference image via **Scene BG** to verify bounding-box trajectory progression against physical landmarks.
 
 ---
 
