@@ -14,10 +14,12 @@ import {
   CameraRegular,
   ChevronDownRegular,
   ChevronRightRegular,
+  SparkleRegular,
   ZoomInRegular,
 } from '@fluentui/react-icons';
 import { EmptyView } from '@axiscommunications/fluent-empty-view';
 import { NormalizedTrackRecord } from '../types/adf';
+import { BrowserAiModal } from './BrowserAiModal';
 
 const useStyles = makeStyles({
   card: {
@@ -170,6 +172,7 @@ export const SnapshotCard: React.FC<SnapshotCardProps> = ({
   // null means "render at 1.0x native pixel resolution"
   const [customWidth, setCustomWidth] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [aiModalOpen, setAiModalOpen] = useState<boolean>(false);
 
   const dragStartRef = useRef<{
     startX: number;
@@ -302,6 +305,20 @@ export const SnapshotCard: React.FC<SnapshotCardProps> = ({
 
         {!isCollapsed && imgSrc && (
           <div className={styles.headerActions}>
+            <Tooltip
+              content="Inspect snapshot attributes and scene anomalies using Chrome's built-in on-device LLM"
+              relationship="label"
+            >
+              <Button
+                size="small"
+                appearance="primary"
+                icon={<SparkleRegular />}
+                onClick={() => setAiModalOpen(true)}
+              >
+                Analyze with Browser AI
+              </Button>
+            </Tooltip>
+
             <Tooltip
               content="Step up integer magnification (2×, 3×, 4× nearest-neighbor)"
               relationship="label"
@@ -458,6 +475,12 @@ export const SnapshotCard: React.FC<SnapshotCardProps> = ({
           )}
         </>
       ))}
+
+      <BrowserAiModal
+        open={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        track={track}
+      />
     </div>
   );
 };

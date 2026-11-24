@@ -17,19 +17,15 @@ import {
 import {
   PlugConnectedRegular,
   PlugDisconnectedRegular,
-  SendRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
 import { formatBytes } from '../utils/adfParser';
 
-export type MqttTransportMode = 'websocket' | 'broadcast';
 export type MqttConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export interface MqttConnectionConfig {
-  transport: MqttTransportMode;
   brokerUrl: string;
   topics: string;
-  publishTopic: string;
   protocolVersion: 5 | 4;
   qos: 0 | 1 | 2;
   clientId: string;
@@ -55,13 +51,9 @@ export interface MqttStats {
   recentEvents: MqttRecentEvent[];
 }
 
-export const BROADCAST_CHANNEL_NAME = 'adf-viewer-mqtt-bus';
-
 export const DEFAULT_MQTT_CONFIG: MqttConnectionConfig = {
-  transport: 'websocket',
-  brokerUrl: 'wss://broker.emqx.io:8084/mqtt',
-  topics: 'axis/+/object_track/#, com.axis.scene.object_track.v1/#, adf-viewer/demo/#',
-  publishTopic: 'adf-viewer/demo/object_track/ch1',
+  brokerUrl: '',
+  topics: 'axis/+/scene/object_track/#',
   protocolVersion: 5,
   qos: 0,
   clientId: `adf-viewer-${Math.random().toString(16).slice(2, 8)}`,
@@ -78,13 +70,6 @@ export const INITIAL_MQTT_STATS: MqttStats = {
   recentEvents: [],
 };
 
-const BROKER_PRESETS: Array<{ label: string; url: string }> = [
-  { label: 'Public EMQX', url: 'wss://broker.emqx.io:8084/mqtt' },
-  { label: 'Public Mosquitto', url: 'wss://test.mosquitto.org:8081/mqtt' },
-  { label: 'Local Mosquitto', url: 'ws://localhost:9001' },
-  { label: 'Local EMQX', url: 'ws://localhost:8083/mqtt' },
-];
-
 export function parseTopicFilterList(topicsInput: string): string[] {
   return topicsInput
     .split(/[\n,]+/)
@@ -92,50 +77,11 @@ export function parseTopicFilterList(topicsInput: string): string[] {
     .filter((t) => t.length > 0);
 }
 
-/**
- * Matches an MQTT topic against a subscription filter supporting `+` and `#` wildcards.
- */
-export function mqttTopicMatches(filter: string, topic: string): boolean {
-  if (!filter || !topic) return false;
-  if (filter === '#' || filter === topic) return true;
-  // Per MQTT spec, `#` or `+` at start do not match `$SYS` topics unless explicitly prefixed with `$`
-  if (topic.startsWith('$') && !filter.startsWith('$')) return false;
-
-  const filterParts = filter.split('/');
-  const topicParts = topic.split('/');
-
-  for (let i = 0; i < filterParts.length; i++) {
-    const fp = filterParts[i];
-    if (fp === '#') {
-      return i === filterParts.length - 1;
-    }
-    if (i >= topicParts.length) {
-      return false;
-    }
-    if (fp !== '+' && fp !== topicParts[i]) {
-      return false;
-    }
-  }
-
-  return filterParts.length === topicParts.length;
-}
-
 const useStyles = makeStyles({
   content: {
     display: 'flex',
     flexDirection: 'column',
     gap: tokens.spacingVerticalM,
-  },
-  modeRow: {
-    display: 'flex',
-    gap: tokens.spacingHorizontalS,
-    flexWrap: 'wrap',
-  },
-  presetRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    flexWrap: 'wrap',
   },
   gridTwo: {
     display: 'grid',
@@ -253,7 +199,6 @@ export interface MqttConnectModalProps {
   stats: MqttStats;
   onConnect: () => void;
   onDisconnect: () => void;
-  onPublishTestTrack: () => void;
 }
 
 export const MqttConnectModal: React.FC<MqttConnectModalProps> = ({
@@ -266,7 +211,6 @@ export const MqttConnectModal: React.FC<MqttConnectModalProps> = ({
   stats,
   onConnect,
   onDisconnect,
-  onPublishTestTrack,
 }) => {
   const styles = useStyles();
 
@@ -285,10 +229,7 @@ export const MqttConnectModal: React.FC<MqttConnectModalProps> = ({
     trimmedUrl.startsWith('ws://127.0.0.1') ||
     trimmedUrl.startsWith('ws://[::1]');
   const showMixedContentWarning =
-    config.transport === 'websocket' &&
-    isHttpsPage &&
-    trimmedUrl.startsWith('ws://') &&
-    !isLocalhostWs;
+    isHttpsPage && trimmedUrl.startsWith('ws://') && !isLocalhostWs;
 
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting';
@@ -318,173 +259,106 @@ export const MqttConnectModal: React.FC<MqttConnectModalProps> = ({
         <DialogBody>
           <DialogTitle>Live MQTT Broker Connection</DialogTitle>
           <DialogContent className={styles.content}>
-            {/* Transport Mode Selector */}
-            <Field label="Transport Mode">
-              <div className={styles.modeRow}>
-                <Button
-                  size="small"
-                  appearance={config.transport === 'websocket' ? 'primary' : 'outline'}
-                  onClick={() => updateField('transport', 'websocket')}
-                  disabled={isConnected || isConnecting}
-                >
-                  Live WebSocket Broker (ws:// / wss://)
-                </Button>
-                <Button
-                  size="small"
-                  appearance={config.transport === 'broadcast' ? 'primary' : 'outline'}
-                  onClick={() => updateField('transport', 'broadcast')}
-                  disabled={isConnected || isConnecting}
-                >
-                  In-Browser Cross-Tab Broker (BroadcastChannel)
-                </Button>
-              </div>
+            <Field label="Broker WebSocket URL">
+              <Input
+                value={config.brokerUrl}
+                onChange={(_, d) => updateField('brokerUrl', d.value)}
+                placeholder="wss://broker.example.com:8084/mqtt or ws://localhost:9001"
+                disabled={isConnected || isConnecting}
+              />
             </Field>
 
-            {config.transport === 'broadcast' ? (
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                Runs a zero-dependency local pub/sub bus across tabs in this browser origin (
-                <code>{BROADCAST_CHANNEL_NAME}</code>) with MQTT <code>+</code> and{' '}
-                <code>#</code> wildcard topic matching — ideal for offline stage demos without an
-                external broker.
-              </Text>
-            ) : (
-              <>
-                <Field label="Broker WebSocket URL">
-                  <Input
-                    value={config.brokerUrl}
-                    onChange={(_, d) => updateField('brokerUrl', d.value)}
-                    placeholder="wss://broker.emqx.io:8084/mqtt"
-                    disabled={isConnected || isConnecting}
-                  />
-                </Field>
+            {showMixedContentWarning && (
+              <div className={styles.warningBox}>
+                <WarningRegular fontSize={18} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                <span>
+                  <strong>Mixed Content Notice:</strong> This page is loaded over{' '}
+                  <code>https://</code>, so browsers block unencrypted <code>ws://</code>{' '}
+                  connections to non-localhost hosts. Use a <code>wss://</code> broker URL or{' '}
+                  <code>ws://localhost:9001</code>.
+                </span>
+              </div>
+            )}
 
-                <div className={styles.presetRow}>
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    Presets:
-                  </Text>
-                  {BROKER_PRESETS.map((p) => (
+            <Field
+              label="Subscribed Topic Filter"
+              hint="Supports + and # wildcards (comma-separated for multiple)"
+            >
+              <Input
+                value={config.topics}
+                onChange={(_, d) => updateField('topics', d.value)}
+                placeholder="axis/+/scene/object_track/#"
+                disabled={isConnected || isConnecting}
+              />
+            </Field>
+
+            <div className={styles.gridThree}>
+              <Field label="Protocol Version">
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <Button
+                    size="small"
+                    appearance={config.protocolVersion === 5 ? 'primary' : 'outline'}
+                    disabled={isConnected || isConnecting}
+                    onClick={() => updateField('protocolVersion', 5)}
+                  >
+                    MQTT v5.0
+                  </Button>
+                  <Button
+                    size="small"
+                    appearance={config.protocolVersion === 4 ? 'primary' : 'outline'}
+                    disabled={isConnected || isConnecting}
+                    onClick={() => updateField('protocolVersion', 4)}
+                  >
+                    v3.1.1
+                  </Button>
+                </div>
+              </Field>
+
+              <Field label="QoS Level">
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {([0, 1, 2] as const).map((q) => (
                     <Button
-                      key={p.url}
+                      key={q}
                       size="small"
-                      appearance={config.brokerUrl === p.url ? 'secondary' : 'outline'}
+                      appearance={config.qos === q ? 'primary' : 'outline'}
                       disabled={isConnected || isConnecting}
-                      onClick={() => updateField('brokerUrl', p.url)}
+                      onClick={() => updateField('qos', q)}
                     >
-                      {p.label}
+                      QoS {q}
                     </Button>
                   ))}
                 </div>
-
-                {showMixedContentWarning && (
-                  <div className={styles.warningBox}>
-                    <WarningRegular fontSize={18} style={{ color: '#f59e0b', flexShrink: 0 }} />
-                    <span>
-                      <strong>Mixed Content Notice:</strong> This page is loaded over{' '}
-                      <code>https://</code>, so browsers block unencrypted <code>ws://</code>{' '}
-                      connections to non-localhost hosts. Use a <code>wss://</code> broker URL or{' '}
-                      <code>ws://localhost:9001</code>.
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-
-            <div className={styles.gridTwo}>
-              <Field
-                label="Subscribed Topic Filters"
-                hint="Comma-separated; supports + and # wildcards"
-              >
-                <Input
-                  value={config.topics}
-                  onChange={(_, d) => updateField('topics', d.value)}
-                  placeholder="axis/+/object_track/#"
-                  disabled={isConnected || isConnecting}
-                />
               </Field>
 
-              <Field
-                label="Test Publish Topic"
-                hint="Target topic for +1 via MQTT demo button"
-              >
+              <Field label="Client ID">
                 <Input
-                  value={config.publishTopic}
-                  onChange={(_, d) => updateField('publishTopic', d.value)}
-                  placeholder="adf-viewer/demo/object_track/ch1"
+                  value={config.clientId}
+                  onChange={(_, d) => updateField('clientId', d.value)}
+                  disabled={isConnected || isConnecting}
                 />
               </Field>
             </div>
 
-            {config.transport === 'websocket' && (
-              <>
-                <div className={styles.gridThree}>
-                  <Field label="Protocol Version">
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <Button
-                        size="small"
-                        appearance={config.protocolVersion === 5 ? 'primary' : 'outline'}
-                        disabled={isConnected || isConnecting}
-                        onClick={() => updateField('protocolVersion', 5)}
-                      >
-                        MQTT v5.0
-                      </Button>
-                      <Button
-                        size="small"
-                        appearance={config.protocolVersion === 4 ? 'primary' : 'outline'}
-                        disabled={isConnected || isConnecting}
-                        onClick={() => updateField('protocolVersion', 4)}
-                      >
-                        v3.1.1
-                      </Button>
-                    </div>
-                  </Field>
+            <div className={styles.gridTwo}>
+              <Field label="Username (optional)">
+                <Input
+                  value={config.username}
+                  onChange={(_, d) => updateField('username', d.value)}
+                  placeholder="Optional broker username"
+                  disabled={isConnected || isConnecting}
+                />
+              </Field>
 
-                  <Field label="QoS Level">
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {([0, 1, 2] as const).map((q) => (
-                        <Button
-                          key={q}
-                          size="small"
-                          appearance={config.qos === q ? 'primary' : 'outline'}
-                          disabled={isConnected || isConnecting}
-                          onClick={() => updateField('qos', q)}
-                        >
-                          QoS {q}
-                        </Button>
-                      ))}
-                    </div>
-                  </Field>
-
-                  <Field label="Client ID">
-                    <Input
-                      value={config.clientId}
-                      onChange={(_, d) => updateField('clientId', d.value)}
-                      disabled={isConnected || isConnecting}
-                    />
-                  </Field>
-                </div>
-
-                <div className={styles.gridTwo}>
-                  <Field label="Username (optional)">
-                    <Input
-                      value={config.username}
-                      onChange={(_, d) => updateField('username', d.value)}
-                      placeholder="Optional broker username"
-                      disabled={isConnected || isConnecting}
-                    />
-                  </Field>
-
-                  <Field label="Password (optional)">
-                    <Input
-                      type="password"
-                      value={config.password}
-                      onChange={(_, d) => updateField('password', d.value)}
-                      placeholder="Optional broker password"
-                      disabled={isConnected || isConnecting}
-                    />
-                  </Field>
-                </div>
-              </>
-            )}
+              <Field label="Password (optional)">
+                <Input
+                  type="password"
+                  value={config.password}
+                  onChange={(_, d) => updateField('password', d.value)}
+                  placeholder="Optional broker password"
+                  disabled={isConnected || isConnecting}
+                />
+              </Field>
+            </div>
 
             {/* Live Status & Metrics Banner */}
             <div className={styles.statusBanner}>
@@ -492,22 +366,12 @@ export const MqttConnectModal: React.FC<MqttConnectModalProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Text weight="semibold">Session Status:</Text>
                   {statusBadge}
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {config.transport === 'broadcast'
-                      ? 'Cross-tab BroadcastChannel'
-                      : config.brokerUrl}
-                  </Text>
+                  {config.brokerUrl.trim() && (
+                    <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                      {config.brokerUrl.trim()}
+                    </Text>
+                  )}
                 </div>
-
-                <Button
-                  size="small"
-                  appearance="secondary"
-                  icon={<SendRegular />}
-                  disabled={!isConnected}
-                  onClick={onPublishTestTrack}
-                >
-                  Publish Test ADF Track to Broker
-                </Button>
               </div>
 
               {errorMessage && <div className={styles.errorBox}>{errorMessage}</div>}
@@ -594,7 +458,7 @@ allow_anonymous true`}</pre>
                 icon={<PlugConnectedRegular />}
                 onClick={onConnect}
                 disabled={
-                  (config.transport === 'websocket' && !config.brokerUrl.trim()) ||
+                  !config.brokerUrl.trim() ||
                   parseTopicFilterList(config.topics).length === 0
                 }
               >

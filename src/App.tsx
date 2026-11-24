@@ -27,7 +27,6 @@ import {
   GridRegular,
   InfoRegular,
   PlugConnectedRegular,
-  SendRegular,
   TableRegular,
   TargetRegular,
   WeatherMoonRegular,
@@ -55,14 +54,12 @@ import { ImportModal } from './components/ImportModal';
 import { ForensicGalleryView } from './components/views/ForensicGalleryView';
 import { SpatialAnalyticsView } from './components/views/SpatialAnalyticsView';
 import {
-  BROADCAST_CHANNEL_NAME,
   DEFAULT_MQTT_CONFIG,
   INITIAL_MQTT_STATS,
   MqttConnectModal,
   MqttConnectionConfig,
   MqttConnectionStatus,
   MqttStats,
-  mqttTopicMatches,
   parseTopicFilterList,
 } from './components/MqttConnectModal';
 
@@ -276,8 +273,6 @@ export const App: React.FC = () => {
   const mqttCounterRef = useRef<number>(1000);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mqttClientRef = useRef<MqttClient | null>(null);
-  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
-  const activeTopicsRef = useRef<string[]>([]);
 
   const handleIncomingMqttPayload = useCallback((topic: string, rawPayload: Uint8Array | string) => {
     const rawText =
@@ -321,11 +316,6 @@ export const App: React.FC = () => {
       mqttClientRef.current.end(true);
       mqttClientRef.current = null;
     }
-    if (broadcastChannelRef.current) {
-      broadcastChannelRef.current.close();
-      broadcastChannelRef.current = null;
-    }
-    activeTopicsRef.current = [];
     setMqttStatus('disconnected');
     setMqttError(null);
   }, []);
@@ -338,32 +328,7 @@ export const App: React.FC = () => {
       setMqttError('Enter at least one MQTT topic filter to subscribe to.');
       return;
     }
-    activeTopicsRef.current = topicFilters;
     setMqttError(null);
-
-    if (mqttConfig.transport === 'broadcast') {
-      if (typeof BroadcastChannel === 'undefined') {
-        setMqttStatus('error');
-        setMqttError('BroadcastChannel is not supported in this browser.');
-        return;
-      }
-      const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-      channel.onmessage = (ev: MessageEvent) => {
-        const data = ev.data as { topic?: string; payload?: string } | null;
-        if (!data || typeof data.topic !== 'string' || typeof data.payload !== 'string') {
-          return;
-        }
-        const matched = activeTopicsRef.current.some((f) =>
-          mqttTopicMatches(f, data.topic as string)
-        );
-        if (matched) {
-          handleIncomingMqttPayload(data.topic, data.payload);
-        }
-      };
-      broadcastChannelRef.current = channel;
-      setMqttStatus('connected');
-      return;
-    }
 
     const url = mqttConfig.brokerUrl.trim();
     if (!url) {
@@ -420,46 +385,12 @@ export const App: React.FC = () => {
     }
   }, [disconnectMqtt, handleIncomingMqttPayload, mqttConfig]);
 
-  const publishTestTrackToMqtt = useCallback(() => {
-    simCounterRef.current += 1;
-    const rawMsg = generateSimulatedTrackMessage(simCounterRef.current);
-    const jsonPayload = JSON.stringify(rawMsg);
-    const targetTopic = mqttConfig.publishTopic.trim() || 'adf-viewer/demo/object_track/ch1';
-
-    if (mqttConfig.transport === 'broadcast' && broadcastChannelRef.current) {
-      broadcastChannelRef.current.postMessage({ topic: targetTopic, payload: jsonPayload });
-      // Local loopback so single-tab demos receive their own published test packet
-      const matched = activeTopicsRef.current.some((f) => mqttTopicMatches(f, targetTopic));
-      if (matched) {
-        handleIncomingMqttPayload(targetTopic, jsonPayload);
-      }
-      return;
-    }
-
-    if (mqttClientRef.current && mqttStatus === 'connected') {
-      mqttClientRef.current.publish(
-        targetTopic,
-        jsonPayload,
-        { qos: mqttConfig.qos },
-        (err) => {
-          if (err) {
-            setMqttError(`Publish error: ${err.message}`);
-          }
-        }
-      );
-    }
-  }, [handleIncomingMqttPayload, mqttConfig.publishTopic, mqttConfig.qos, mqttConfig.transport, mqttStatus]);
-
   useEffect(() => {
     return () => {
       if (mqttClientRef.current) {
         mqttClientRef.current.removeAllListeners();
         mqttClientRef.current.end(true);
         mqttClientRef.current = null;
-      }
-      if (broadcastChannelRef.current) {
-        broadcastChannelRef.current.close();
-        broadcastChannelRef.current = null;
       }
     };
   }, []);
@@ -732,7 +663,7 @@ export const App: React.FC = () => {
                 </Button>
               </Tooltip>
               <Tooltip
-                content="Connect to a live MQTT broker (WebSocket) or Cross-Tab BroadcastChannel"
+                content="Connect to a live MQTT broker over WebSocket"
                 relationship="label"
               >
                 <Button
@@ -750,21 +681,6 @@ export const App: React.FC = () => {
                         : 'Connect MQTT'}
                 </Button>
               </Tooltip>
-              {mqttStatus === 'connected' && (
-                <Tooltip
-                  content={`Publish a simulated ADF track to ${mqttConfig.publishTopic}`}
-                  relationship="label"
-                >
-                  <Button
-                    size="small"
-                    appearance="secondary"
-                    icon={<SendRegular />}
-                    onClick={publishTestTrackToMqtt}
-                  >
-                    +1 via MQTT
-                  </Button>
-                </Tooltip>
-              )}
             </div>
           }
           rightContent={
@@ -1135,7 +1051,6 @@ export const App: React.FC = () => {
           stats={mqttStats}
           onConnect={connectMqtt}
           onDisconnect={disconnectMqtt}
-          onPublishTestTrack={publishTestTrackToMqtt}
         />
       </div>
     </FluentProvider>
