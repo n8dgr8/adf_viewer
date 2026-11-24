@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Button,
@@ -22,6 +22,8 @@ import {
   CopyRegular,
   DismissRegular,
   ErrorCircleRegular,
+  FullScreenMaximizeRegular,
+  FullScreenMinimizeRegular,
   InfoRegular,
   PlayRegular,
   SparkleRegular,
@@ -41,18 +43,141 @@ import {
   runBrowserAiAnalysis,
 } from '../utils/browserAi';
 
+const MIN_MODAL_WIDTH = 480;
+const MIN_MODAL_HEIGHT = 360;
+const DEFAULT_MODAL_WIDTH = 860;
+
+type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+const RESIZE_CURSORS: Record<ResizeEdge, string> = {
+  n: 'ns-resize',
+  s: 'ns-resize',
+  e: 'ew-resize',
+  w: 'ew-resize',
+  ne: 'nesw-resize',
+  sw: 'nesw-resize',
+  nw: 'nwse-resize',
+  se: 'nwse-resize',
+};
+
 const useStyles = makeStyles({
   surface: {
-    maxWidth: '860px',
-    width: '94vw',
+    position: 'fixed',
+    maxWidth: '96vw',
+    maxHeight: '94vh',
+    minWidth: `${MIN_MODAL_WIDTH}px`,
+    minHeight: `${MIN_MODAL_HEIGHT}px`,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  body: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    gridTemplateRows: 'auto minmax(0, 1fr) auto',
+  },
+  titleActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '2px',
   },
   content: {
     display: 'flex',
     flexDirection: 'column',
     gap: tokens.spacingVerticalM,
-    maxHeight: '75vh',
+    minHeight: 0,
     overflowY: 'auto',
     paddingRight: '4px',
+  },
+  resizeEdgeN: {
+    position: 'absolute',
+    top: 0,
+    left: '14px',
+    right: '14px',
+    height: '6px',
+    cursor: 'ns-resize',
+    zIndex: 20,
+    touchAction: 'none',
+  },
+  resizeEdgeS: {
+    position: 'absolute',
+    bottom: 0,
+    left: '14px',
+    right: '14px',
+    height: '6px',
+    cursor: 'ns-resize',
+    zIndex: 20,
+    touchAction: 'none',
+  },
+  resizeEdgeE: {
+    position: 'absolute',
+    top: '14px',
+    bottom: '14px',
+    right: 0,
+    width: '6px',
+    cursor: 'ew-resize',
+    zIndex: 20,
+    touchAction: 'none',
+  },
+  resizeEdgeW: {
+    position: 'absolute',
+    top: '14px',
+    bottom: '14px',
+    left: 0,
+    width: '6px',
+    cursor: 'ew-resize',
+    zIndex: 20,
+    touchAction: 'none',
+  },
+  resizeCornerNW: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '14px',
+    height: '14px',
+    cursor: 'nwse-resize',
+    zIndex: 21,
+    touchAction: 'none',
+  },
+  resizeCornerNE: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: '14px',
+    height: '14px',
+    cursor: 'nesw-resize',
+    zIndex: 21,
+    touchAction: 'none',
+  },
+  resizeCornerSW: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: '14px',
+    height: '14px',
+    cursor: 'nesw-resize',
+    zIndex: 21,
+    touchAction: 'none',
+  },
+  resizeCornerSE: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: '18px',
+    height: '18px',
+    cursor: 'nwse-resize',
+    zIndex: 21,
+    touchAction: 'none',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    padding: '3px',
+    color: tokens.colorNeutralForeground3,
+    opacity: 0.6,
+    ':hover': {
+      opacity: 1,
+      color: tokens.colorNeutralForeground1,
+    },
   },
   statusBanner: {
     display: 'flex',
@@ -268,8 +393,13 @@ export interface BrowserAiModalProps {
 
 export const BrowserAiModal: React.FC<BrowserAiModalProps> = ({ open, onClose, track }) => {
   const styles = useStyles();
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  const [modalSize, setModalSize] = useState<{ width: number; height: number } | null>(null);
+  const [isMaximized, setIsMaximized] = useState<boolean>(false);
 
   const [availability, setAvailability] = useState<BrowserAiAvailabilityInfo | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState<boolean>(false);
@@ -450,12 +580,138 @@ export const BrowserAiModal: React.FC<BrowserAiModalProps> = ({ open, onClose, t
     }
   }, [analysisOutput]);
 
+  // Clean up any active pointer resize listeners on unmount or modal close
+  useEffect(() => {
+    if (!open && resizeCleanupRef.current) {
+      resizeCleanupRef.current();
+    }
+    return () => {
+      if (resizeCleanupRef.current) {
+        resizeCleanupRef.current();
+      }
+    };
+  }, [open]);
+
+  const handleResizePointerDown = useCallback(
+    (edge: ResizeEdge) => (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const surfaceEl = surfaceRef.current;
+      if (!surfaceEl) return;
+
+      if (resizeCleanupRef.current) {
+        resizeCleanupRef.current();
+      }
+
+      const rect = surfaceEl.getBoundingClientRect();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startWidth = rect.width;
+      const startHeight = rect.height;
+
+      const dirX = edge.includes('e') ? 1 : edge.includes('w') ? -1 : 0;
+      const dirY = edge.includes('s') ? 1 : edge.includes('n') ? -1 : 0;
+
+      if (isMaximized) {
+        setIsMaximized(false);
+        setModalSize({ width: Math.round(startWidth), height: Math.round(startHeight) });
+      }
+
+      const prevUserSelect = document.body.style.userSelect;
+      const prevCursor = document.body.style.cursor;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = RESIZE_CURSORS[edge];
+
+      const onPointerMove = (moveEvent: PointerEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        const maxW = Math.max(MIN_MODAL_WIDTH, Math.floor(window.innerWidth * 0.96));
+        const maxH = Math.max(MIN_MODAL_HEIGHT, Math.floor(window.innerHeight * 0.94));
+
+        // DialogSurface stays centered via margin: auto, so scaling by 2*delta keeps the dragged edge 1:1 with the cursor.
+        const nextWidth =
+          dirX !== 0
+            ? Math.min(maxW, Math.max(MIN_MODAL_WIDTH, Math.round(startWidth + dirX * dx * 2)))
+            : Math.min(maxW, Math.round(startWidth));
+        const nextHeight =
+          dirY !== 0
+            ? Math.min(maxH, Math.max(MIN_MODAL_HEIGHT, Math.round(startHeight + dirY * dy * 2)))
+            : Math.min(maxH, Math.round(startHeight));
+
+        setModalSize({ width: nextWidth, height: nextHeight });
+      };
+
+      const cleanup = () => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', cleanup);
+        window.removeEventListener('pointercancel', cleanup);
+        document.body.style.userSelect = prevUserSelect;
+        document.body.style.cursor = prevCursor;
+        resizeCleanupRef.current = null;
+      };
+
+      resizeCleanupRef.current = cleanup;
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', cleanup);
+      window.addEventListener('pointercancel', cleanup);
+    },
+    [isMaximized]
+  );
+
+  const handleResetModalSize = useCallback(() => {
+    setIsMaximized(false);
+    setModalSize(null);
+  }, []);
+
+  const hasExplicitHeight = isMaximized || modalSize !== null;
+  const surfaceStyle: React.CSSProperties = isMaximized
+    ? { width: '96vw', height: '94vh' }
+    : modalSize
+      ? { width: `${modalSize.width}px`, height: `${modalSize.height}px` }
+      : { width: `min(${DEFAULT_MODAL_WIDTH}px, 94vw)`, maxHeight: '90vh' };
+  const bodyStyle: React.CSSProperties = hasExplicitHeight
+    ? { height: '100%', maxHeight: '100%' }
+    : { maxHeight: 'calc(90vh - 48px)' };
+
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
-      <DialogSurface className={styles.surface}>
-        <DialogBody>
-          <DialogTitle>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <DialogSurface ref={surfaceRef} className={styles.surface} style={surfaceStyle}>
+        <DialogBody className={styles.body} style={bodyStyle}>
+          <DialogTitle
+            action={
+              <div className={styles.titleActions}>
+                <Tooltip
+                  content={isMaximized ? 'Restore modal size' : 'Maximize modal'}
+                  relationship="label"
+                >
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    aria-label={isMaximized ? 'Restore modal size' : 'Maximize modal'}
+                    icon={
+                      isMaximized ? (
+                        <FullScreenMinimizeRegular />
+                      ) : (
+                        <FullScreenMaximizeRegular />
+                      )
+                    }
+                    onClick={() => setIsMaximized((prev) => !prev)}
+                  />
+                </Tooltip>
+                <Tooltip content="Close" relationship="label">
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    aria-label="Close"
+                    icon={<DismissRegular />}
+                    onClick={onClose}
+                  />
+                </Tooltip>
+              </div>
+            }
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <SparkleRegular style={{ color: '#FFCC00' }} />
               <span>Browser AI Snapshot &amp; Scene Analysis</span>
               <Badge appearance="outline" size="small">
@@ -833,6 +1089,31 @@ chrome://flags/#prompt-api-for-gemini-nano-multimodal-input  → Enabled`}
             </Tooltip>
           </DialogActions>
         </DialogBody>
+
+        {/* Edge & corner resize handles */}
+        <div className={styles.resizeEdgeN} onPointerDown={handleResizePointerDown('n')} />
+        <div className={styles.resizeEdgeS} onPointerDown={handleResizePointerDown('s')} />
+        <div className={styles.resizeEdgeE} onPointerDown={handleResizePointerDown('e')} />
+        <div className={styles.resizeEdgeW} onPointerDown={handleResizePointerDown('w')} />
+        <div className={styles.resizeCornerNW} onPointerDown={handleResizePointerDown('nw')} />
+        <div className={styles.resizeCornerNE} onPointerDown={handleResizePointerDown('ne')} />
+        <div className={styles.resizeCornerSW} onPointerDown={handleResizePointerDown('sw')} />
+        <div
+          className={styles.resizeCornerSE}
+          onPointerDown={handleResizePointerDown('se')}
+          onDoubleClick={handleResetModalSize}
+          title="Drag to resize (double-click to reset size)"
+          aria-hidden="true"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path
+              d="M9 1L1 9M9 5L5 9M9 8.5L8.5 9"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
       </DialogSurface>
     </Dialog>
   );
